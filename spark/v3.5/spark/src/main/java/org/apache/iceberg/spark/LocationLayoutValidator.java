@@ -23,7 +23,8 @@ import org.apache.spark.sql.connector.catalog.Identifier;
 
 /**
  * Enforces that user-supplied table locations follow the Hive-style layout: a table
- * {@code <db>.<table>} must reside at a path ending in {@code <db>.db/<table>}.
+ * {@code <db>.<table>} must reside at a path ending in {@code <db>.db/<table>} or
+ * {@code <db>.db/<table>_new} (the latter supports rebuild/swap workflows).
  *
  * <p>Null and empty locations pass through unchanged so the underlying catalog can compute the
  * default location from the database's metadata.
@@ -45,15 +46,20 @@ final class LocationLayoutValidator {
     String db = namespace[namespace.length - 1];
     String table = ident.name();
     String requiredSuffix = db + ".db/" + table;
+    String rebuildSuffix = requiredSuffix + "_new";
 
     String normalized = LocationUtil.stripTrailingSlash(location);
-    if (!normalized.equals(requiredSuffix) && !normalized.endsWith("/" + requiredSuffix)) {
+    if (!matchesSuffix(normalized, requiredSuffix) && !matchesSuffix(normalized, rebuildSuffix)) {
       throw new IllegalArgumentException(
           String.format(
-              "Location %s for table %s.%s must end with '%s'",
-              location, db, table, requiredSuffix));
+              "Location %s for table %s.%s must end with '%s' or '%s'",
+              location, db, table, requiredSuffix, rebuildSuffix));
     }
 
     return location;
+  }
+
+  private static boolean matchesSuffix(String normalized, String suffix) {
+    return normalized.equals(suffix) || normalized.endsWith("/" + suffix);
   }
 }
