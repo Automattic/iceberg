@@ -45,6 +45,32 @@ public class TestLocationLayoutValidator {
   }
 
   @Test
+  public void allowsRebuildSuffixWithUnderscoreNew() {
+    String location = "s3://bucket/warehouse/mydb.db/mytable_new";
+
+    assertThat(LocationLayoutValidator.validateAndReturn(MYDB_MYTABLE, location))
+        .isEqualTo(location);
+  }
+
+  @Test
+  public void allowsRebuildSuffixWithTrailingSlash() {
+    String location = "s3://bucket/warehouse/mydb.db/mytable_new/";
+
+    assertThat(LocationLayoutValidator.validateAndReturn(MYDB_MYTABLE, location))
+        .isSameAs(location);
+  }
+
+  @Test
+  public void rejectsRebuildSuffixForDifferentTable() {
+    assertThatThrownBy(
+            () ->
+                LocationLayoutValidator.validateAndReturn(
+                    MYDB_MYTABLE, "s3://bucket/warehouse/mydb.db/othertable_new"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("mydb.db/mytable_new");
+  }
+
+  @Test
   public void rejectsLocationOutsideDbDirectory() {
     assertThatThrownBy(
             () ->
