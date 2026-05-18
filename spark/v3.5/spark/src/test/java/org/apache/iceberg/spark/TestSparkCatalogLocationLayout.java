@@ -65,6 +65,7 @@ public class TestSparkCatalogLocationLayout extends TestBase {
   public void dropTables() {
     sql("DROP TABLE IF EXISTS %s.%s.t", CATALOG, DB);
     sql("DROP TABLE IF EXISTS %s.%s.t_src", CATALOG, DB);
+    sql("DROP TABLE IF EXISTS %s.%s.t_new", CATALOG, DB);
   }
 
   @Test
@@ -110,13 +111,25 @@ public class TestSparkCatalogLocationLayout extends TestBase {
   }
 
   @Test
+  public void createNewSuffixedTableWithMismatchedLocationListsBothAllowedSuffixes() {
+    // Swap-via-rename pattern stages `<t>_new` at the canonical `<t>` location. Verify the
+    // validator wires through SparkCatalog for `_new` identifiers and surfaces both the
+    // canonical and rebuild suffixes in the error.
+    assertThatThrownBy(
+            () ->
+                sql(
+                    "CREATE TABLE %s.%s.t_new (id bigint) USING iceberg LOCATION 'file:/forbidden/x'",
+                    CATALOG, DB))
+        .hasMessageContaining("default.db/t'")
+        .hasMessageContaining("default.db/t_new'");
+  }
+
+  @Test
   public void alterTableSetLocationMismatchedIsRejected() {
     sql("CREATE TABLE %s.%s.t (id bigint) USING iceberg", CATALOG, DB);
 
     assertThatThrownBy(
-            () ->
-                sql(
-                    "ALTER TABLE %s.%s.t SET LOCATION 'file:/forbidden/x'", CATALOG, DB))
+            () -> sql("ALTER TABLE %s.%s.t SET LOCATION 'file:/forbidden/x'", CATALOG, DB))
         .hasMessageContaining("default.db/t");
   }
 }
