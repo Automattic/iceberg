@@ -22,14 +22,22 @@ import org.apache.iceberg.util.LocationUtil;
 import org.apache.spark.sql.connector.catalog.Identifier;
 
 /**
- * Enforces that user-supplied table locations follow the Hive-style layout: a table
- * {@code <db>.<table>} must reside at a path ending in {@code <db>.db/<table>} or
- * {@code <db>.db/<table>_new} (the latter supports rebuild/swap workflows).
+ * Enforces that user-supplied table locations follow the Hive-style layout: a table {@code
+ * <db>.<table>} must reside at a path ending in {@code <db>.db/<base>} or {@code
+ * <db>.db/<base>_new}, where {@code <base>} is the identifier name with any trailing {@code _new}
+ * suffix stripped.
+ *
+ * <p>The {@code _new} allowance supports swap-via-rename rebuild workflows in both directions:
+ * staging a sibling {@code <table>_new} directory next to {@code <table>}, or staging an Iceberg
+ * table named {@code <table>_new} that already points at the canonical {@code <table>} location and
+ * is later renamed in the catalog.
  *
  * <p>Null and empty locations pass through unchanged so the underlying catalog can compute the
  * default location from the database's metadata.
  */
 final class LocationLayoutValidator {
+
+  private static final String NEW_SUFFIX = "_new";
 
   private LocationLayoutValidator() {}
 
@@ -45,15 +53,19 @@ final class LocationLayoutValidator {
 
     String db = namespace[namespace.length - 1];
     String table = ident.name();
-    String requiredSuffix = db + ".db/" + table;
-    String rebuildSuffix = requiredSuffix + "_new";
+    String base =
+        table.endsWith(NEW_SUFFIX)
+            ? table.substring(0, table.length() - NEW_SUFFIX.length())
+            : table;
+    String canonicalSuffix = db + ".db/" + base;
+    String rebuildSuffix = canonicalSuffix + NEW_SUFFIX;
 
     String normalized = LocationUtil.stripTrailingSlash(location);
-    if (!matchesSuffix(normalized, requiredSuffix) && !matchesSuffix(normalized, rebuildSuffix)) {
+    if (!matchesSuffix(normalized, canonicalSuffix) && !matchesSuffix(normalized, rebuildSuffix)) {
       throw new IllegalArgumentException(
           String.format(
               "Location %s for table %s.%s must end with '%s' or '%s'",
-              location, db, table, requiredSuffix, rebuildSuffix));
+              location, db, table, canonicalSuffix, rebuildSuffix));
     }
 
     return location;

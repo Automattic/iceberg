@@ -27,6 +27,8 @@ import org.junit.jupiter.api.Test;
 public class TestLocationLayoutValidator {
 
   private static final Identifier MYDB_MYTABLE = Identifier.of(new String[] {"mydb"}, "mytable");
+  private static final Identifier MYDB_MYTABLE_NEW =
+      Identifier.of(new String[] {"mydb"}, "mytable_new");
 
   @Test
   public void allowsLocationEndingInExpectedSuffix() {
@@ -136,10 +138,36 @@ public class TestLocationLayoutValidator {
     assertThat(LocationLayoutValidator.validateAndReturn(ident, allowed)).isEqualTo(allowed);
 
     assertThatThrownBy(
+            () -> LocationLayoutValidator.validateAndReturn(ident, "s3://bucket/parent.db/mytable"))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  public void allowsCanonicalLocationForNewSuffixedIdentifier() {
+    // swap-via-rename: stage `mytable_new` at the canonical `mytable` location, then rename
+    String location = "s3://bucket/warehouse/mydb.db/mytable";
+
+    assertThat(LocationLayoutValidator.validateAndReturn(MYDB_MYTABLE_NEW, location))
+        .isEqualTo(location);
+  }
+
+  @Test
+  public void allowsNewSuffixLocationForNewSuffixedIdentifier() {
+    String location = "s3://bucket/warehouse/mydb.db/mytable_new";
+
+    assertThat(LocationLayoutValidator.validateAndReturn(MYDB_MYTABLE_NEW, location))
+        .isEqualTo(location);
+  }
+
+  @Test
+  public void rejectsDoubleNewSuffixLocationForNewSuffixedIdentifier() {
+    assertThatThrownBy(
             () ->
                 LocationLayoutValidator.validateAndReturn(
-                    ident, "s3://bucket/parent.db/mytable"))
-        .isInstanceOf(IllegalArgumentException.class);
+                    MYDB_MYTABLE_NEW, "s3://bucket/warehouse/mydb.db/mytable_new_new"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("mydb.db/mytable")
+        .hasMessageContaining("mydb.db/mytable_new");
   }
 
   @Test
