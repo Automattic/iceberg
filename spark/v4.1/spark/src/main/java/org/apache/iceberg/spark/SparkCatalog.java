@@ -191,7 +191,8 @@ public class SparkCatalog extends BaseCatalog {
       org.apache.iceberg.Table icebergTable =
           builder
               .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
-              .withLocation(LocationLayoutValidator.validateAndReturn(ident, properties.get("location")))
+              .withLocation(
+                  LocationLayoutValidator.validateAndReturn(ident, properties.get("location")))
               .withProperties(Spark3Util.rebuildCreateProperties(properties))
               .create();
       return new SparkTable(icebergTable);
@@ -210,7 +211,8 @@ public class SparkCatalog extends BaseCatalog {
       Transaction transaction =
           builder
               .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
-              .withLocation(LocationLayoutValidator.validateAndReturn(ident, properties.get("location")))
+              .withLocation(
+                  LocationLayoutValidator.validateAndReturn(ident, properties.get("location")))
               .withProperties(Spark3Util.rebuildCreateProperties(properties))
               .createTransaction();
       return new StagedSparkTable(transaction);
@@ -229,7 +231,8 @@ public class SparkCatalog extends BaseCatalog {
       Transaction transaction =
           builder
               .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
-              .withLocation(LocationLayoutValidator.validateAndReturn(ident, properties.get("location")))
+              .withLocation(
+                  LocationLayoutValidator.validateAndReturn(ident, properties.get("location")))
               .withProperties(Spark3Util.rebuildCreateProperties(properties))
               .replaceTransaction();
       return new StagedSparkTable(transaction);
@@ -246,7 +249,8 @@ public class SparkCatalog extends BaseCatalog {
     Transaction transaction =
         builder
             .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
-            .withLocation(LocationLayoutValidator.validateAndReturn(ident, properties.get("location")))
+            .withLocation(
+                LocationLayoutValidator.validateAndReturn(ident, properties.get("location")))
             .withProperties(Spark3Util.rebuildCreateProperties(properties))
             .createOrReplaceTransaction();
     return new StagedSparkTable(transaction);

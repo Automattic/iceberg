@@ -59,8 +59,7 @@ public class TestSparkSessionCatalogRename extends TestBaseWithCatalog {
 
   @TestTemplate
   public void renameOfIcebergTableThrows() {
-    assertThatThrownBy(
-            () -> sql("ALTER TABLE %s RENAME TO %s", tableName, tableName("renamed")))
+    assertThatThrownBy(() -> sql("ALTER TABLE %s RENAME TO %s", tableName, tableName("renamed")))
         .hasMessageContaining("Rename table is disabled");
   }
 }
