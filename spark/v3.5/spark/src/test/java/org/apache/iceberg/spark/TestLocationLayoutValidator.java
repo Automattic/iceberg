@@ -89,7 +89,8 @@ public class TestLocationLayoutValidator {
             () ->
                 LocationLayoutValidator.validateAndReturn(
                     MYDB_MYTABLE, "s3://bucket/warehouse/mydb.db/somethingelse"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must end with");
   }
 
   @Test
@@ -98,7 +99,8 @@ public class TestLocationLayoutValidator {
             () ->
                 LocationLayoutValidator.validateAndReturn(
                     MYDB_MYTABLE, "s3://bucket/warehouse/otherdb.db/mytable"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must end with");
   }
 
   @Test
@@ -108,7 +110,8 @@ public class TestLocationLayoutValidator {
             () ->
                 LocationLayoutValidator.validateAndReturn(
                     MYDB_MYTABLE, "s3://bucket/warehouse/xmydb.db/mytable"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must end with");
   }
 
   @Test
@@ -139,7 +142,8 @@ public class TestLocationLayoutValidator {
 
     assertThatThrownBy(
             () -> LocationLayoutValidator.validateAndReturn(ident, "s3://bucket/parent.db/mytable"))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("must end with");
   }
 
   @Test
