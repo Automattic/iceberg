@@ -354,7 +354,8 @@ public class SparkCatalog extends BaseCatalog {
     try {
       table = icebergCatalog.loadTable(buildIdentifier(ident));
     } catch (org.apache.iceberg.exceptions.NoSuchTableException
-        | org.apache.iceberg.exceptions.NotFoundException e) {
+        | org.apache.iceberg.exceptions.NotFoundException
+        | org.apache.iceberg.exceptions.RuntimeIOException e) {
       // missing table or unreadable metadata: no data to protect, let the drop proceed
       return;
     }
@@ -734,8 +735,7 @@ public class SparkCatalog extends BaseCatalog {
 
     this.catalogName = name;
     SparkSession sparkSession = SparkSession.getActiveSession().get();
-    this.hadoopConf =
-        SparkUtil.hadoopConfCatalogOverrides(SparkSession.getActiveSession().get(), name);
+    this.hadoopConf = SparkUtil.hadoopConfCatalogOverrides(sparkSession, name);
     this.tables = new HadoopTables(hadoopConf);
     this.icebergCatalog =
         cacheEnabled
