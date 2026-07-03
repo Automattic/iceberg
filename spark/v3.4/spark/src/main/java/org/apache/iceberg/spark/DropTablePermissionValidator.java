@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Set;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsAction;
@@ -45,9 +46,16 @@ import org.apache.spark.sql.connector.catalog.Identifier;
  * <p>The check calls {@link FileSystem#access(Path, FsAction)}, which on HDFS is a {@code
  * checkAccess} RPC evaluated by the NameNode against the caller's UGI (including groups and ACLs).
  * Deleting a directory tree requires WRITE and EXECUTE on the directory itself and on its parent,
- * so both are checked. Only {@code hdfs} locations are enforced: other filesystems fall back to a
- * client-side mode-bit guess that is not authoritative. The check inspects only the top-level
- * directory, not the full tree; Iceberg-written trees have uniform ownership in practice.
+ * so both are checked. Sticky-bit protection is evaluated the way the NameNode's {@code
+ * FSPermissionChecker} does on delete: when a directory has the sticky bit set, an entry can only
+ * be removed by the entry's owner or the directory's owner. That rule is applied to the parent
+ * directory (unlinking the table directory) and to the table directory's immediate children
+ * (purging its contents). HDFS superusers bypass sticky-bit checks server-side but cannot be
+ * detected here, so they may be blocked spuriously.
+ *
+ * <p>Only {@code hdfs} locations are enforced: other filesystems fall back to a client-side
+ * mode-bit guess that is not authoritative. The check inspects only the top level, not the full
+ * tree; Iceberg-written trees have uniform ownership in practice.
  *
  * <p>Locations that are null, empty, or missing pass through so that dangling metastore entries can
  * still be cleaned up.
@@ -82,7 +90,10 @@ final class DropTablePermissionValidator {
     }
 
     try {
-      if (!fs.exists(path)) {
+      FileStatus tableDir;
+      try {
+        tableDir = fs.getFileStatus(path);
+      } catch (FileNotFoundException e) {
         return;
       }
 
@@ -91,7 +102,10 @@ final class DropTablePermissionValidator {
       Path parent = path.getParent();
       if (parent != null) {
         fs.access(parent, FsAction.WRITE_EXECUTE);
+        checkStickyBit(ident, fs.getFileStatus(parent), tableDir);
       }
+
+      checkStickyBitOnChildren(ident, fs, tableDir);
     } catch (FileNotFoundException e) {
       // the location disappeared concurrently; nothing left to protect
     } catch (AccessControlException e) {
@@ -106,6 +120,45 @@ final class DropTablePermissionValidator {
           String.format(
               "Cannot drop table %s: failed to check delete permission on %s", ident, path),
           e);
+    }
+  }
+
+  /**
+   * Mirrors the NameNode's sticky-bit rule for deleting {@code entry} from {@code dir}: allowed
+   * only for the owner of the entry or the owner of the directory.
+   */
+  private static void checkStickyBit(Identifier ident, FileStatus dir, FileStatus entry) {
+    if (!dir.getPermission().getStickyBit()) {
+      return;
+    }
+
+    String user = currentUser();
+    if (user.equals(dir.getOwner()) || user.equals(entry.getOwner())) {
+      return;
+    }
+
+    throw new ValidationException(
+        "Cannot drop table %s: sticky bit on %s prevents user %s from deleting %s (owned by %s)",
+        ident, dir.getPath(), user, entry.getPath(), entry.getOwner());
+  }
+
+  private static void checkStickyBitOnChildren(Identifier ident, FileSystem fs, FileStatus tableDir)
+      throws IOException {
+    if (!tableDir.getPermission().getStickyBit()) {
+      return;
+    }
+
+    String user = currentUser();
+    if (user.equals(tableDir.getOwner())) {
+      return;
+    }
+
+    for (FileStatus child : fs.listStatus(tableDir.getPath())) {
+      if (!user.equals(child.getOwner())) {
+        throw new ValidationException(
+            "Cannot drop table %s: sticky bit on %s prevents user %s from deleting %s (owned by %s)",
+            ident, tableDir.getPath(), user, child.getPath(), child.getOwner());
+      }
     }
   }
 
