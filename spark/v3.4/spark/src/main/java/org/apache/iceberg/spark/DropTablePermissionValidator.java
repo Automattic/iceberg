@@ -58,11 +58,13 @@ import org.apache.spark.sql.connector.catalog.Identifier;
  * tree; Iceberg-written trees have uniform ownership in practice.
  *
  * <p>Locations that are null, empty, or missing pass through so that dangling metastore entries can
- * still be cleaned up.
+ * still be cleaned up. Service accounts (usernames starting with {@code bot-}) are exempt from the
+ * check entirely.
  */
 final class DropTablePermissionValidator {
 
   private static final Set<String> ENFORCED_SCHEMES = ImmutableSet.of("hdfs");
+  private static final String EXEMPT_USER_PREFIX = "bot-";
 
   private DropTablePermissionValidator() {}
 
@@ -86,6 +88,10 @@ final class DropTablePermissionValidator {
 
   static void validate(Identifier ident, Path path, FileSystem fs) {
     if (!ENFORCED_SCHEMES.contains(fs.getUri().getScheme())) {
+      return;
+    }
+
+    if (currentUser().startsWith(EXEMPT_USER_PREFIX)) {
       return;
     }
 

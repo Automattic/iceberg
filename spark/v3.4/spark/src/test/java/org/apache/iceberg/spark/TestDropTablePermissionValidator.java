@@ -31,6 +31,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.security.PrivilegedExceptionAction;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -162,6 +163,25 @@ public class TestDropTablePermissionValidator {
     assertThatThrownBy(() -> DropTablePermissionValidator.validate(MYDB_MYTABLE, TABLE_PATH, fs))
         .isInstanceOf(UncheckedIOException.class)
         .hasMessageContaining("failed to check delete permission");
+  }
+
+  @Test
+  public void skipsUsersWithBotPrefix() throws Exception {
+    FileSystem fs = mockFs("hdfs");
+    doThrow(new AccessControlException("Permission denied"))
+        .when(fs)
+        .access(any(Path.class), any(FsAction.class));
+
+    UserGroupInformation.createRemoteUser("bot-pipeline")
+        .doAs(
+            (PrivilegedExceptionAction<Void>)
+                () -> {
+                  DropTablePermissionValidator.validate(MYDB_MYTABLE, TABLE_PATH, fs);
+                  return null;
+                });
+
+    verify(fs, never()).getFileStatus(any(Path.class));
+    verify(fs, never()).access(any(Path.class), any(FsAction.class));
   }
 
   @Test
