@@ -130,6 +130,7 @@ public class SparkCatalog extends BaseCatalog {
   private ViewCatalog asViewCatalog = null;
   private String[] defaultNamespace = null;
   private HadoopTables tables;
+  private Configuration hadoopConf;
 
   /**
    * Build an Iceberg {@link Catalog} to be used by this Spark catalog adapter.
@@ -339,10 +340,26 @@ public class SparkCatalog extends BaseCatalog {
 
   private boolean dropTableWithoutPurging(Identifier ident) {
     if (isPathIdentifier(ident)) {
-      return tables.dropTable(((PathIdentifier) ident).location(), false /* don't purge data */);
+      String location = ((PathIdentifier) ident).location();
+      DropTablePermissionValidator.validate(ident, location, hadoopConf);
+      return tables.dropTable(location, false /* don't purge data */);
     } else {
+      validateDeletePermission(ident);
       return icebergCatalog.dropTable(buildIdentifier(ident), false /* don't purge data */);
     }
+  }
+
+  private void validateDeletePermission(Identifier ident) {
+    org.apache.iceberg.Table table;
+    try {
+      table = icebergCatalog.loadTable(buildIdentifier(ident));
+    } catch (org.apache.iceberg.exceptions.NoSuchTableException
+        | org.apache.iceberg.exceptions.NotFoundException e) {
+      // missing table or unreadable metadata: no data to protect, let the drop proceed
+      return;
+    }
+
+    DropTablePermissionValidator.validate(ident, table.location(), hadoopConf);
   }
 
   @Override
@@ -717,9 +734,9 @@ public class SparkCatalog extends BaseCatalog {
 
     this.catalogName = name;
     SparkSession sparkSession = SparkSession.getActiveSession().get();
-    this.tables =
-        new HadoopTables(
-            SparkUtil.hadoopConfCatalogOverrides(SparkSession.getActiveSession().get(), name));
+    this.hadoopConf =
+        SparkUtil.hadoopConfCatalogOverrides(SparkSession.getActiveSession().get(), name);
+    this.tables = new HadoopTables(hadoopConf);
     this.icebergCatalog =
         cacheEnabled
             ? CachingCatalog.wrap(catalog, cacheCaseSensitive, cacheExpirationIntervalMs)
