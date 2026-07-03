@@ -308,7 +308,8 @@ public class SparkSessionCatalog<
     // catalog tables,
     // check table existence first to ensure that the table belongs to the Iceberg catalog.
     if (icebergCatalog.tableExists(from)) {
-      icebergCatalog.renameTable(from, to);
+      throw new UnsupportedOperationException(
+          "Rename table is disabled. To rename: 1. Create a new table, 2. Copy data, 3. Drop the old table.");
     } else {
       getSessionCatalog().renameTable(from, to);
     }

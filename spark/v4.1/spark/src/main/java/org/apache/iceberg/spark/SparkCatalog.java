@@ -130,6 +130,7 @@ public class SparkCatalog extends BaseCatalog {
   private ViewCatalog asViewCatalog = null;
   private String[] defaultNamespace = null;
   private HadoopTables tables;
+  private Configuration hadoopConf;
 
   /**
    * Build an Iceberg {@link Catalog} to be used by this Spark catalog adapter.
@@ -191,7 +192,8 @@ public class SparkCatalog extends BaseCatalog {
       org.apache.iceberg.Table icebergTable =
           builder
               .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
-              .withLocation(properties.get("location"))
+              .withLocation(
+                  LocationLayoutValidator.validateAndReturn(ident, properties.get("location")))
               .withProperties(Spark3Util.rebuildCreateProperties(properties))
               .create();
       return new SparkTable(icebergTable);
@@ -210,7 +212,8 @@ public class SparkCatalog extends BaseCatalog {
       Transaction transaction =
           builder
               .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
-              .withLocation(properties.get("location"))
+              .withLocation(
+                  LocationLayoutValidator.validateAndReturn(ident, properties.get("location")))
               .withProperties(Spark3Util.rebuildCreateProperties(properties))
               .createTransaction();
       return new StagedSparkTable(transaction);
@@ -229,7 +232,8 @@ public class SparkCatalog extends BaseCatalog {
       Transaction transaction =
           builder
               .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
-              .withLocation(properties.get("location"))
+              .withLocation(
+                  LocationLayoutValidator.validateAndReturn(ident, properties.get("location")))
               .withProperties(Spark3Util.rebuildCreateProperties(properties))
               .replaceTransaction();
       return new StagedSparkTable(transaction);
@@ -246,7 +250,8 @@ public class SparkCatalog extends BaseCatalog {
     Transaction transaction =
         builder
             .withPartitionSpec(Spark3Util.toPartitionSpec(icebergSchema, transforms))
-            .withLocation(properties.get("location"))
+            .withLocation(
+                LocationLayoutValidator.validateAndReturn(ident, properties.get("location")))
             .withProperties(Spark3Util.rebuildCreateProperties(properties))
             .createOrReplaceTransaction();
     return new StagedSparkTable(transaction);
@@ -264,6 +269,7 @@ public class SparkCatalog extends BaseCatalog {
       if (change instanceof SetProperty) {
         SetProperty set = (SetProperty) change;
         if (TableCatalog.PROP_LOCATION.equalsIgnoreCase(set.property())) {
+          LocationLayoutValidator.validateAndReturn(ident, set.value());
           setLocation = set;
         } else if ("current-snapshot-id".equalsIgnoreCase(set.property())) {
           setSnapshotId = set;
@@ -334,10 +340,27 @@ public class SparkCatalog extends BaseCatalog {
 
   private boolean dropTableWithoutPurging(Identifier ident) {
     if (isPathIdentifier(ident)) {
-      return tables.dropTable(((PathIdentifier) ident).location(), false /* don't purge data */);
+      String location = ((PathIdentifier) ident).location();
+      DropTablePermissionValidator.validate(ident, location, hadoopConf);
+      return tables.dropTable(location, false /* don't purge data */);
     } else {
+      validateDeletePermission(ident);
       return icebergCatalog.dropTable(buildIdentifier(ident), false /* don't purge data */);
     }
+  }
+
+  private void validateDeletePermission(Identifier ident) {
+    org.apache.iceberg.Table table;
+    try {
+      table = icebergCatalog.loadTable(buildIdentifier(ident));
+    } catch (org.apache.iceberg.exceptions.NoSuchTableException
+        | org.apache.iceberg.exceptions.NotFoundException
+        | org.apache.iceberg.exceptions.RuntimeIOException e) {
+      // missing table or unreadable metadata: no data to protect, let the drop proceed
+      return;
+    }
+
+    DropTablePermissionValidator.validate(ident, table.location(), hadoopConf);
   }
 
   @Override
@@ -712,9 +735,8 @@ public class SparkCatalog extends BaseCatalog {
 
     this.catalogName = name;
     SparkSession sparkSession = SparkSession.getActiveSession().get();
-    this.tables =
-        new HadoopTables(
-            SparkUtil.hadoopConfCatalogOverrides(SparkSession.getActiveSession().get(), name));
+    this.hadoopConf = SparkUtil.hadoopConfCatalogOverrides(sparkSession, name);
+    this.tables = new HadoopTables(hadoopConf);
     this.icebergCatalog =
         cacheEnabled
             ? CachingCatalog.wrap(catalog, cacheCaseSensitive, cacheExpirationIntervalMs)
